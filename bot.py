@@ -225,4 +225,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    app.run(host="10.204.68.209", port=10000)  # Lance le serveur Flask pour recevoir les mises à jour
+    app.run(host="0.0.0.0", port=10000)  # Lance le serveur Flask pour recevoir les mises à jour
