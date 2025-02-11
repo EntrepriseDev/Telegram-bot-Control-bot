@@ -112,10 +112,12 @@ def home():
 
 @app.route(f"/{TELEGRAM_BOT_TOKEN}", methods=["POST"])
 def webhook():
-    """Recevoir les mises à jour Telegram"""
-    update = Update.de_json(request.get_json(), bot)
+    data = request.get_json()
+    logger.info(f"Requête reçue : {json.dumps(data, indent=4)}")  # Ajoute cette ligne
+    update = Update.de_json(data, bot)
     application.process_update(update)
     return "OK", 200
+
 
 def main():
     """Démarrer l'application Flask et le bot Telegram"""
