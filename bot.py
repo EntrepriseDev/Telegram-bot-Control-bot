@@ -2,7 +2,6 @@ import logging
 import json
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
-from flask import Flask, request
 
 # Configuration des tokens
 TELEGRAM_BOT_TOKEN = "7516380781:AAE_XvPn_7KA6diabmcaZOqBMxBzXAHv0aw"
@@ -63,7 +62,6 @@ async def add_rules(update: Update, context: CallbackContext) -> None:
         rule_text = ' '.join(context.args)
         if chat_id not in GROUP_DATA:
             GROUP_DATA[chat_id] = {"rules": ""}
-        
         if rule_text:
             GROUP_DATA[chat_id]["rules"] += f"\n{rule_text}"  # Ajoute la nouvelle règle
             save_group_data()  # Sauvegarder après ajout
@@ -189,23 +187,11 @@ async def help_command(update: Update, context: CallbackContext) -> None:
     )
     await update.message.reply_text(help_text)
 
-# Configuration du webhook avec Flask
-app = Flask(__name__)
-
-@app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
-def webhook():
-    """Recevoir les mises à jour de Telegram via un webhook."""
-    json_str = request.get_data().decode('UTF-8')
-    update = Update.de_json(json.loads(json_str), bot)
-    dispatcher.process_update(update)
-    return 'OK'
-
 # Fonction principale pour démarrer le bot
-def main():
+def main() -> None:
     """Démarre le bot"""
     load_group_data()
 
-    # Créer une application Telegram et ajouter les handlers
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
     # Commandes
@@ -220,9 +206,8 @@ def main():
     application.add_handler(CommandHandler("bannedusers", list_banned))
     application.add_handler(CommandHandler("help", help_command))
 
-    # Lancer le webhook
-    application.bot.set_webhook(url=f"https://telegram-bot-control.vercel.app/{TELEGRAM_BOT_TOKEN}")
+    # Lancer le bot
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
-    app.run(host="0.0.0.0", port=5000)  # Lance le serveur Flask pour recevoir les mises à jour
