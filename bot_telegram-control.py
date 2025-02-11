@@ -1,140 +1,173 @@
-import sqlite3
+import logging
+import json
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
-TOKEN = "7516380781:AAE_XvPn_7KA6diabmcaZOqBMxBzXAHv0aw"
+# Configuration des tokens
+TELEGRAM_BOT_TOKEN = "7516380781:AAE_XvPn_7KA6diabmcaZOqBMxBzXAHv0aw"
 
-# Connexion à la base de données
-def init_db():
-    conn = sqlite3.connect("bot_data.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS banned_words (
-            group_id INTEGER,
-            word TEXT,
-            PRIMARY KEY (group_id, word)
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS group_scores (
-            group_id INTEGER PRIMARY KEY,
-            score INTEGER DEFAULT 0
-        )
-    """)
-    conn.commit()
-    conn.close()
+# Configuration du logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Ajouter un mot interdit
-async def add_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Utilisation : /addword <mot>")
-        return
-    
-    word = context.args[0].lower()
-    group_id = update.message.chat.id
-    
-    conn = sqlite3.connect("bot_data.db")
-    cursor = conn.cursor()
+# Dictionnaire pour stocker les données des groupes
+GROUP_DATA = {}
+
+# Charger les données de groupes depuis un fichier JSON (persistant)
+def load_group_data():
+    global GROUP_DATA
     try:
-        cursor.execute("INSERT INTO banned_words (group_id, word) VALUES (?, ?)", (group_id, word))
-        conn.commit()
-        await update.message.reply_text(f"Le mot '{word}' a été ajouté à la liste des interdictions !")
-    except sqlite3.IntegrityError:
-        await update.message.reply_text("Ce mot est déjà interdit !")
-    finally:
-        conn.close()
+        with open('group_data.json', 'r') as f:
+            GROUP_DATA = json.load(f)
+    except FileNotFoundError:
+        GROUP_DATA = {}  # Si le fichier n'existe pas, on crée un dictionnaire vide
 
-# Supprimer un mot interdit
-async def remove_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Utilisation : /removeword <mot>")
-        return
-    
-    word = context.args[0].lower()
-    group_id = update.message.chat.id
-    
-    conn = sqlite3.connect("bot_data.db")
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM banned_words WHERE group_id = ? AND word = ?", (group_id, word))
-    conn.commit()
-    conn.close()
-    
-    await update.message.reply_text(f"Le mot '{word}' a été supprimé de la liste des interdictions !")
+# Sauvegarder les données des groupes dans un fichier JSON
+def save_group_data():
+    try:
+        with open('group_data.json', 'w') as f:
+            json.dump(GROUP_DATA, f, indent=4)  # Utilisation de indent=4 pour une meilleure lisibilité du JSON
+        logger.info("Données sauvegardées avec succès.")
+    except Exception as e:
+        logger.error(f"Erreur lors de la sauvegarde des données : {e}")
 
-# Vérifier et supprimer les messages contenant des mots interdits
-async def filter_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.lower()
-    group_id = update.message.chat.id
-    
-    conn = sqlite3.connect("bot_data.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT word FROM banned_words WHERE group_id = ?", (group_id,))
-    banned_words = [row[0] for row in cursor.fetchall()]
-    conn.close()
-    
-    if any(word in text for word in banned_words):
-        await update.message.delete()
-        await update.message.reply_text("🚫 Message supprimé : langage inapproprié !")
+# Fonction de démarrage du bot
+async def start(update: Update, context: CallbackContext) -> None:
+    """Répond au /start"""
+    await update.message.reply_text("Bienvenue ! Utilisez /help pour voir les commandes disponibles.")
 
-# Démarrer un jeu simple (exemple : quiz)
-async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    group_id = update.message.chat.id
-    await update.message.reply_text("🎲 Début du jeu ! Répondez à cette question :\n\nQuel est la capitale de la France ? (Répondez avec /answer <réponse>)")
-    context.bot_data[group_id] = "paris"
-
-# Vérifier la réponse au jeu
-async def check_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Utilisation : /answer <réponse>")
-        return
-    
-    group_id = update.message.chat.id
-    answer = " ".join(context.args).lower()
-    
-    if group_id in context.bot_data and context.bot_data[group_id] == answer:
-        await update.message.reply_text("🎉 Bonne réponse ! +10 points pour le groupe !")
-        
-        conn = sqlite3.connect("bot_data.db")
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO group_scores (group_id, score) VALUES (?, 10) ON CONFLICT(group_id) DO UPDATE SET score = score + 10", (group_id,))
-        conn.commit()
-        conn.close()
+# Afficher les règles d'un groupe
+async def show_rules(update: Update, context: CallbackContext) -> None:
+    """Montre les règles d'un groupe"""
+    chat_id = update.message.chat.id
+    if chat_id in GROUP_DATA and "rules" in GROUP_DATA[chat_id]:
+        rules = GROUP_DATA[chat_id]["rules"]
+        await update.message.reply_text(f"Règles de ce groupe :\n{rules}")
     else:
-        await update.message.reply_text("❌ Mauvaise réponse, essayez encore !")
+        await update.message.reply_text("Ce groupe n'a pas encore de règles définies.")
 
-# Afficher le classement des groupes
-async def show_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    conn = sqlite3.connect("bot_data.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT group_id, score FROM group_scores ORDER BY score DESC LIMIT 10")
-    rows = cursor.fetchall()
-    conn.close()
-    
-    if not rows:
-        await update.message.reply_text("Aucun groupe n'a encore marqué de points.")
-        return
-    
-    leaderboard = "🏆 Classement des meilleurs groupes :\n"
-    for rank, (group_id, score) in enumerate(rows, start=1):
-        leaderboard += f"{rank}. Groupe {group_id} - {score} points\n"
-    
-    await update.message.reply_text(leaderboard)
+# Ajouter une ou plusieurs règles d'un groupe
+async def add_rules(update: Update, context: CallbackContext) -> None:
+    """Ajoute une règle au groupe, seulement si l'utilisateur est l'administrateur"""
+    chat_id = update.message.chat.id
+    user_id = update.message.from_user.id
 
-# Initialiser le bot
-async def main():
-    init_db()
-    app = Application.builder().token(TOKEN).build()
+    # Récupère les administrateurs du groupe
+    admins = await update.message.chat.get_administrators()
+
+    # Vérifie si l'utilisateur est administrateur
+    is_admin = any(admin.user.id == user_id for admin in admins)
+
+    if is_admin:
+        rule_text = ' '.join(context.args)
+        if chat_id not in GROUP_DATA:
+            GROUP_DATA[chat_id] = {"rules": ""}
+        if rule_text:
+            GROUP_DATA[chat_id]["rules"] += f"\n{rule_text}"  # Ajoute la nouvelle règle
+            save_group_data()  # Sauvegarder après ajout
+            await update.message.reply_text(f"Règle ajoutée : {rule_text}")
+        else:
+            await update.message.reply_text("Veuillez fournir le texte de la règle après la commande.")
+    else:
+        await update.message.reply_text("Tu n'es pas un administrateur pour ajouter des règles.")
+
+# Modifier les règles d'un groupe
+async def modify_rules(update: Update, context: CallbackContext) -> None:
+    """Modifie les règles d'un groupe"""
+    chat_id = update.message.chat.id
+    user_id = update.message.from_user.id
+
+    # Récupère les administrateurs du groupe
+    admins = await update.message.chat.get_administrators()
+
+    # Vérifie si l'utilisateur est administrateur
+    is_admin = any(admin.user.id == user_id for admin in admins)
+
+    if is_admin:
+        rules_text = ' '.join(context.args)
+        if rules_text:
+            GROUP_DATA[chat_id]["rules"] = rules_text  # Remplace les règles existantes
+            save_group_data()  # Sauvegarder après modification
+            await update.message.reply_text(f"Les règles ont été modifiées :\n{rules_text}")
+        else:
+            await update.message.reply_text("Veuillez fournir les nouvelles règles après la commande.")
+    else:
+        await update.message.reply_text("Seul l'admin peut modifier les règles.")
+
+# Supprimer une règle spécifique
+async def remove_rule(update: Update, context: CallbackContext) -> None:
+    """Supprime une règle spécifique d'un groupe"""
+    chat_id = update.message.chat.id
+    if chat_id in GROUP_DATA and "rules" in GROUP_DATA[chat_id]:
+        rule_to_remove = ' '.join(context.args)
+        rules = GROUP_DATA[chat_id]["rules"].split("\n")
+        
+        if rule_to_remove in rules:
+            rules.remove(rule_to_remove)
+            GROUP_DATA[chat_id]["rules"] = "\n".join(rules)
+            save_group_data()  # Sauvegarder après suppression
+            await update.message.reply_text(f"La règle '{rule_to_remove}' a été supprimée.")
+        else:
+            await update.message.reply_text(f"La règle '{rule_to_remove}' n'existe pas dans les règles du groupe.")
+    else:
+        await update.message.reply_text("Ce groupe n'a pas encore de règles définies.")
+
+# Ajouter un utilisateur à la liste des utilisateurs du groupe
+async def add_user(update: Update, context: CallbackContext) -> None:
+    """Ajoute un utilisateur à la liste des utilisateurs d'un groupe"""
+    chat_id = update.message.chat.id
+    if chat_id not in GROUP_DATA:
+        GROUP_DATA[chat_id] = {"users": []}
     
-    app.add_handler(CommandHandler("addword", add_banned_word))
-    app.add_handler(CommandHandler("removeword", remove_banned_word))
-    app.add_handler(CommandHandler("startgame", start_game))
-    app.add_handler(CommandHandler("answer", check_answer))
-    app.add_handler(CommandHandler("leaderboard", show_leaderboard))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, filter_messages))
+    user = update.message.reply_to_message.from_user
+    if user.id not in GROUP_DATA[chat_id]["users"]:
+        GROUP_DATA[chat_id]["users"].append(user.id)
+        save_group_data()  # Sauvegarder après ajout
+        await update.message.reply_text(f"{user.full_name} a été ajouté à la liste des utilisateurs.")
+    else:
+        await update.message.reply_text(f"{user.full_name} est déjà dans la liste des utilisateurs.")
+
+# Supprimer un utilisateur de la liste des utilisateurs du groupe
+async def remove_user(update: Update, context: CallbackContext) -> None:
+    """Supprime un utilisateur de la liste des utilisateurs d'un groupe"""
+    chat_id = update.message.chat.id
+    if chat_id in GROUP_DATA and "users" in GROUP_DATA[chat_id]:
+        user = update.message.reply_to_message.from_user
+        if user.id in GROUP_DATA[chat_id]["users"]:
+            GROUP_DATA[chat_id]["users"].remove(user.id)
+            save_group_data()  # Sauvegarder après suppression
+            await update.message.reply_text(f"{user.full_name} a été supprimé de la liste des utilisateurs.")
+        else:
+            await update.message.reply_text(f"{user.full_name} n'est pas dans la liste des utilisateurs.")
+    else:
+        await update.message.reply_text("Ce groupe n'a pas encore d'utilisateurs définis.")
+
+# Fonction pour charger et sauvegarder les données des groupes
+def load_and_save_data():
+    load_group_data()
+    save_group_data()
+
+# Démarrer le bot
+def main():
+    load_and_save_data()
     
-    print("Le bot est en cours d'exécution...")
-    await app.run_polling()
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
+    # Commandes
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("rules", show_rules))
+    app.add_handler(CommandHandler("setrules", add_rules))
+    app.add_handler(CommandHandler("modifyrules", modify_rules))
+    app.add_handler(CommandHandler("removerule", remove_rule))
+    app.add_handler(CommandHandler("adduser", add_user))
+    app.add_handler(CommandHandler("removeuser", remove_user))
+    
+    # Gestion des messages
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda update, context: None))
+
+    # Démarrer le bot
+    logger.info("Bot lancé...")
+    app.run_polling()
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()
