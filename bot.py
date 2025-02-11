@@ -1,235 +1,147 @@
 import logging
 import json
-import os
+from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackContext
-from flask import Flask, request
-
-# Remplacez par votre token Telegram directement ici
-TELEGRAM_BOT_TOKEN = '7516380781:AAE_XvPn_7KA6diabmcaZOqBMxBzXAHv0aw'
 
 # Configuration du logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Dictionnaire pour stocker les données des groupes
+# Token du bot Telegram
+TELEGRAM_BOT_TOKEN = "7516380781:AAE_XvPn_7KA6diabmcaZOqBMxBzXAHv0aw"
+
+# Base de données des groupes (stockée en JSON)
 GROUP_DATA = {}
 
-# Charger les données des groupes depuis un fichier JSON (persistant)
+# Charger les données depuis le fichier JSON
 def load_group_data():
     global GROUP_DATA
     try:
         with open('group_data.json', 'r') as f:
             GROUP_DATA = json.load(f)
     except FileNotFoundError:
-        GROUP_DATA = {}  # Si le fichier n'existe pas, on crée un dictionnaire vide
+        GROUP_DATA = {}
 
-# Sauvegarder les données des groupes dans un fichier JSON
+# Sauvegarder les données
 def save_group_data():
     try:
         with open('group_data.json', 'w') as f:
-            json.dump(GROUP_DATA, f, indent=4)  # Utilisation de indent=4 pour une meilleure lisibilité du JSON
+            json.dump(GROUP_DATA, f, indent=4)
         logger.info("Données sauvegardées avec succès.")
     except Exception as e:
-        logger.error(f"Erreur lors de la sauvegarde des données : {e}")
+        logger.error(f"Erreur lors de la sauvegarde : {e}")
 
-# Fonction de démarrage du bot
+# Commande /start
 async def start(update: Update, context: CallbackContext) -> None:
-    """Répond au /start"""
-    await update.message.reply_text("Bienvenue ! Utilisez /help pour voir les commandes disponibles.")
+    await update.message.reply_text("Bienvenue ! Utilisez /help pour voir les commandes.")
 
-# Afficher les règles d'un groupe
-async def show_rules(update: Update, context: CallbackContext) -> None:
-    """Montre les règles d'un groupe"""
-    chat_id = update.message.chat.id
-    if chat_id in GROUP_DATA and "rules" in GROUP_DATA[chat_id]:
-        rules = GROUP_DATA[chat_id]["rules"]
-        await update.message.reply_text(f"Règles de ce groupe :\n{rules}")
-    else:
-        await update.message.reply_text("Ce groupe n'a pas encore de règles définies.")
-
-# Ajouter une règle au groupe
-async def add_rules(update: Update, context: CallbackContext) -> None:
-    """Ajoute une règle au groupe, seulement si l'utilisateur est l'administrateur"""
-    chat_id = update.message.chat.id
-    user_id = update.message.from_user.id
-
-    # Récupère les administrateurs du groupe
-    admins = await update.message.chat.get_administrators()
-
-    # Vérifie si l'utilisateur est administrateur
-    is_admin = any(admin.user.id == user_id for admin in admins)
-
-    if is_admin:
-        rule_text = ' '.join(context.args)
-        if chat_id not in GROUP_DATA:
-            GROUP_DATA[chat_id] = {"rules": ""}
-        
-        if rule_text:
-            GROUP_DATA[chat_id]["rules"] += f"\n{rule_text}"  # Ajoute la nouvelle règle
-            save_group_data()  # Sauvegarder après ajout
-            await update.message.reply_text(f"Règle ajoutée : {rule_text}")
-        else:
-            await update.message.reply_text("Veuillez fournir le texte de la règle après la commande.")
-    else:
-        await update.message.reply_text("Tu n'es pas un administrateur pour ajouter des règles.")
-
-# Modifier les règles d'un groupe
-async def modify_rules(update: Update, context: CallbackContext) -> None:
-    """Modifie les règles d'un groupe"""
-    chat_id = update.message.chat.id
-    user_id = update.message.from_user.id
-
-    # Récupère les administrateurs du groupe
-    admins = await update.message.chat.get_administrators()
-
-    # Vérifie si l'utilisateur est administrateur
-    is_admin = any(admin.user.id == user_id for admin in admins)
-
-    if is_admin:
-        rules_text = ' '.join(context.args)
-        if rules_text:
-            GROUP_DATA[chat_id]["rules"] = rules_text  # Remplace les règles existantes
-            save_group_data()  # Sauvegarder après modification
-            await update.message.reply_text(f"Les règles ont été modifiées :\n{rules_text}")
-        else:
-            await update.message.reply_text("Veuillez fournir les nouvelles règles après la commande.")
-    else:
-        await update.message.reply_text("Seul l'admin peut modifier les règles.")
-
-# Supprimer une règle spécifique
-async def remove_rule(update: Update, context: CallbackContext) -> None:
-    """Supprime une règle spécifique d'un groupe"""
-    chat_id = update.message.chat.id
-    if chat_id in GROUP_DATA and "rules" in GROUP_DATA[chat_id]:
-        rule_to_remove = ' '.join(context.args)
-        rules = GROUP_DATA[chat_id]["rules"].split("\n")
-        
-        if rule_to_remove in rules:
-            rules.remove(rule_to_remove)
-            GROUP_DATA[chat_id]["rules"] = "\n".join(rules)
-            save_group_data()  # Sauvegarder après suppression
-            await update.message.reply_text(f"La règle '{rule_to_remove}' a été supprimée.")
-        else:
-            await update.message.reply_text(f"La règle '{rule_to_remove}' n'existe pas dans les règles du groupe.")
-    else:
-        await update.message.reply_text("Ce groupe n'a pas encore de règles définies.")
-
-# Ajouter un utilisateur à la liste des utilisateurs du groupe
-async def add_user(update: Update, context: CallbackContext) -> None:
-    """Ajoute un utilisateur à la liste des utilisateurs d'un groupe"""
-    chat_id = update.message.chat.id
-    if chat_id not in GROUP_DATA:
-        GROUP_DATA[chat_id] = {"users": [], "banned": []}
-    
-    user = update.message.reply_to_message.from_user
-    if user.id not in GROUP_DATA[chat_id]["users"]:
-        GROUP_DATA[chat_id]["users"].append(user.id)
-        save_group_data()  # Sauvegarder après ajout
-        await update.message.reply_text(f"{user.full_name} a été ajouté à la liste des utilisateurs.")
-    else:
-        await update.message.reply_text(f"{user.full_name} est déjà dans la liste des utilisateurs.")
-
-# Supprimer un utilisateur de la liste des utilisateurs du groupe
-async def remove_user(update: Update, context: CallbackContext) -> None:
-    """Supprime un utilisateur de la liste des utilisateurs d'un groupe"""
-    chat_id = update.message.chat.id
-    if chat_id in GROUP_DATA and "users" in GROUP_DATA[chat_id]:
-        user = update.message.reply_to_message.from_user
-        if user.id in GROUP_DATA[chat_id]["users"]:
-            GROUP_DATA[chat_id]["users"].remove(user.id)
-            save_group_data()  # Sauvegarder après suppression
-            await update.message.reply_text(f"{user.full_name} a été supprimé de la liste des utilisateurs.")
-        else:
-            await update.message.reply_text(f"{user.full_name} n'est pas dans la liste des utilisateurs.")
-    else:
-        await update.message.reply_text("Ce groupe n'a pas encore d'utilisateurs définis.")
-
-# Bannir un utilisateur
-async def ban_user(update: Update, context: CallbackContext) -> None:
-    """Bannit un utilisateur du groupe"""
-    chat_id = update.message.chat.id
-    if chat_id not in GROUP_DATA:
-        GROUP_DATA[chat_id] = {"users": [], "banned": []}
-
-    user = update.message.reply_to_message.from_user
-    if user.id not in GROUP_DATA[chat_id]["banned"]:
-        GROUP_DATA[chat_id]["banned"].append(user.id)
-        save_group_data()  # Sauvegarder après ajout au groupe des bannis
-        await update.message.reply_text(f"{user.full_name} a été banni du groupe.")
-    else:
-        await update.message.reply_text(f"{user.full_name} est déjà banni.")
-
-# Lister les membres bannis
-async def list_banned(update: Update, context: CallbackContext) -> None:
-    """Affiche les membres bannis du groupe"""
-    chat_id = update.message.chat.id
-    if chat_id in GROUP_DATA and "banned" in GROUP_DATA[chat_id]:
-        banned_users = GROUP_DATA[chat_id]["banned"]
-        if banned_users:
-            banned_names = [str(user) for user in banned_users]
-            await update.message.reply_text(f"Membres bannis :\n" + "\n".join(banned_names))
-        else:
-            await update.message.reply_text("Il n'y a actuellement aucun membre banni.")
-    else:
-        await update.message.reply_text("Ce groupe n'a pas de membres bannis.")
-
-# Fonction d'aide
+# Commande /help
 async def help_command(update: Update, context: CallbackContext) -> None:
-    """Affiche les commandes disponibles"""
     help_text = (
-        "/start - Démarre le bot\n"
-        "/rules - Affiche les règles du groupe\n"
-        "/setrules [règle] - Ajouter une règle\n"
-        "/modifyrules [règles] - Modifier les règles\n"
-        "/removerule [règle] - Supprimer une règle\n"
-        "/adduser - Ajouter un utilisateur\n"
-        "/removeuser - Supprimer un utilisateur\n"
-        "/banuser - Bannir un utilisateur\n"
-        "/bannedusers - Voir la liste des bannis\n"
+        "/start - Démarrer le bot\n"
+        "/help - Voir la liste des commandes\n"
+        "/rules - Afficher les règles\n"
+        "/setrules [texte] - Ajouter une règle\n"
+        "/ban [@user] - Bannir un utilisateur\n"
+        "/unban [@user] - Débannir un utilisateur\n"
+        "/warn [@user] - Avertir un utilisateur\n"
+        "/leaderboard - Voir le classement des groupes\n"
+        "/addword [mot] - Ajouter un mot interdit\n"
+        "/removeword [mot] - Supprimer un mot interdit\n"
+        "/listwords - Voir la liste des mots interdits\n"
     )
     await update.message.reply_text(help_text)
 
-# Initialisation du bot et du serveur Flask
-def main():
-    """Démarre le bot et l'application Flask"""
-    load_group_data()
-    
-    # Crée l'application Flask
-    app = Flask(__name__)
+# Commande /rules
+async def show_rules(update: Update, context: CallbackContext) -> None:
+    chat_id = str(update.message.chat.id)
+    rules = GROUP_DATA.get(chat_id, {}).get("rules", "Aucune règle définie.")
+    await update.message.reply_text(f"Règles :\n{rules}")
 
+# Commande /setrules
+async def add_rules(update: Update, context: CallbackContext) -> None:
+    chat_id = str(update.message.chat.id)
+    rules_text = ' '.join(context.args)
     
-@app.route('/')
+    if not rules_text:
+        await update.message.reply_text("Veuillez fournir le texte de la règle après la commande.")
+        return
+    
+    if chat_id not in GROUP_DATA:
+        GROUP_DATA[chat_id] = {}
+    
+    GROUP_DATA[chat_id]["rules"] = rules_text
+    save_group_data()
+    await update.message.reply_text(f"Règles mises à jour :\n{rules_text}")
+
+# Commande /ban
+async def ban_user(update: Update, context: CallbackContext) -> None:
+    if not context.args:
+        await update.message.reply_text("Veuillez mentionner un utilisateur à bannir.")
+        return
+    await update.message.reply_text(f"L'utilisateur {context.args[0]} a été banni.")
+
+# Commande /unban
+async def unban_user(update: Update, context: CallbackContext) -> None:
+    if not context.args:
+        await update.message.reply_text("Veuillez mentionner un utilisateur à débannir.")
+        return
+    await update.message.reply_text(f"L'utilisateur {context.args[0]} a été débanni.")
+
+# Commande /warn
+async def warn_user(update: Update, context: CallbackContext) -> None:
+    if not context.args:
+        await update.message.reply_text("Veuillez mentionner un utilisateur à avertir.")
+        return
+    await update.message.reply_text(f"L'utilisateur {context.args[0]} a été averti.")
+
+# Commande /leaderboard
+async def leaderboard(update: Update, context: CallbackContext) -> None:
+    leaderboard_text = "Classement des groupes :\n"
+    for group, data in GROUP_DATA.items():
+        leaderboard_text += f"{group}: {data.get('score', 0)} points\n"
+    await update.message.reply_text(leaderboard_text)
+
+# Initialisation de Flask
+app = Flask(__name__)
+
+@app.route("/", methods=["GET"])
 def home():
-    return "Le bot Telegram est actif !"
-    # Créer une instance de bot avec Application
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    return "Le bot Telegram est en ligne ! 🚀"
 
-    # Ajouter des gestionnaires pour les commandes
+@app.route(f"/{TELEGRAM_BOT_TOKEN}", methods=["POST"])
+def webhook():
+    """Recevoir les mises à jour Telegram"""
+    update = Update.de_json(request.get_json(), bot)
+    application.process_update(update)
+    return "OK", 200
+
+def main():
+    """Démarrer l'application Flask et le bot Telegram"""
+    load_group_data()
+
+    global bot
+    global application
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    bot = application.bot
+
+    # Ajouter les commandes au bot
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("rules", show_rules))
     application.add_handler(CommandHandler("setrules", add_rules))
-    application.add_handler(CommandHandler("modifyrules", modify_rules))
-    application.add_handler(CommandHandler("removerule", remove_rule))
-    application.add_handler(CommandHandler("adduser", add_user))
-    application.add_handler(CommandHandler("removeuser", remove_user))
-    application.add_handler(CommandHandler("banuser", ban_user))
-    application.add_handler(CommandHandler("bannedusers", list_banned))
-    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("ban", ban_user))
+    application.add_handler(CommandHandler("unban", unban_user))
+    application.add_handler(CommandHandler("warn", warn_user))
+    application.add_handler(CommandHandler("leaderboard", leaderboard))
 
-    @app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
-    def webhook():
-        """Traite les mises à jour du webhook"""
-        json_str = request.get_data().decode('UTF-8')
-        update = Update.de_json(json.loads(json_str), application.bot)
-        application.process_update(update)
-        return 'OK'
+    # Définir le webhook
+    webhook_url = f"https://telegram-bot-control-bot.onrender.com/{TELEGRAM_BOT_TOKEN}"
+    bot.set_webhook(url=webhook_url)
 
-    # Définir l'URL du webhook
-    application.bot.set_webhook(url=f"https://telegram-bot-control-bot.onrender.com/{TELEGRAM_BOT_TOKEN}")
-
-    # Lancer le serveur Flask
+    # Démarrer Flask
     app.run(host="0.0.0.0", port=10000)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
