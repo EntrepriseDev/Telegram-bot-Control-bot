@@ -7,7 +7,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 # Configuration des tokens
 TELEGRAM_BOT_TOKEN = "7516380781:AAE_XvPn_7KA6diabmcaZOqBMxBzXAHv0aw"
-WEBHOOK_URL = "https://telegram-bot-controller.onrender.com"  # Ex: https://tondomaine.com/webhook
+WEBHOOK_URL = "https://telegram-bot-controll.onrender.com"  # Ex: https://tondomaine.com/webhook
 
 # Configuration du logger
 logging.basicConfig(level=logging.INFO)
