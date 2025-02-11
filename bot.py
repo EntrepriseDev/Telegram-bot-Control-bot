@@ -1,12 +1,12 @@
 import logging
 import json
 import os
-from telegram import Update, Bot
-from telegram.ext import Application, CommandHandler, CallbackContext, Dispatcher
+from telegram import Update
+from telegram.ext import Application, CommandHandler, CallbackContext
 from flask import Flask, request
 
 # Remplacez par votre token Telegram directement ici
-TELEGRAM_BOT_TOKEN = 'your-telegram-bot-token-here'
+TELEGRAM_BOT_TOKEN = '7516380781:AAE_XvPn_7KA6diabmcaZOqBMxBzXAHv0aw'
 
 # Configuration du logger
 logging.basicConfig(level=logging.INFO)
@@ -198,32 +198,31 @@ def main():
     # Crée l'application Flask
     app = Flask(__name__)
 
-    # Créer une instance de bot
-    bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    dispatcher = Dispatcher(bot, None)
+    # Créer une instance de bot avec Application
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
     # Ajouter des gestionnaires pour les commandes
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("rules", show_rules))
-    dispatcher.add_handler(CommandHandler("setrules", add_rules))
-    dispatcher.add_handler(CommandHandler("modifyrules", modify_rules))
-    dispatcher.add_handler(CommandHandler("removerule", remove_rule))
-    dispatcher.add_handler(CommandHandler("adduser", add_user))
-    dispatcher.add_handler(CommandHandler("removeuser", remove_user))
-    dispatcher.add_handler(CommandHandler("banuser", ban_user))
-    dispatcher.add_handler(CommandHandler("bannedusers", list_banned))
-    dispatcher.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("rules", show_rules))
+    application.add_handler(CommandHandler("setrules", add_rules))
+    application.add_handler(CommandHandler("modifyrules", modify_rules))
+    application.add_handler(CommandHandler("removerule", remove_rule))
+    application.add_handler(CommandHandler("adduser", add_user))
+    application.add_handler(CommandHandler("removeuser", remove_user))
+    application.add_handler(CommandHandler("banuser", ban_user))
+    application.add_handler(CommandHandler("bannedusers", list_banned))
+    application.add_handler(CommandHandler("help", help_command))
 
     @app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
     def webhook():
         """Traite les mises à jour du webhook"""
         json_str = request.get_data().decode('UTF-8')
-        update = Update.de_json(json.loads(json_str), bot)
-        dispatcher.process_update(update)
+        update = Update.de_json(json.loads(json_str), application.bot)
+        application.process_update(update)
         return 'OK'
 
     # Définir l'URL du webhook
-    bot.set_webhook(url=f"https://telegram-bot-control-bot.onrender.com/{TELEGRAM_BOT_TOKEN}")
+    application.bot.set_webhook(url=f"https://telegram-bot-control-bot.onrender.com/{TELEGRAM_BOT_TOKEN}")
 
     # Lancer le serveur Flask
     app.run(host="0.0.0.0", port=10000)
