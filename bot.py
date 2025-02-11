@@ -221,7 +221,7 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
 
     # Lancer le webhook
-    application.bot.set_webhook(url=f"https://your-vercel-url.vercel.app/{TELEGRAM_BOT_TOKEN}")
+    application.bot.set_webhook(url=f"https://telegram-bot-control.vercel.app/{TELEGRAM_BOT_TOKEN}")
 
 if __name__ == "__main__":
     main()
