@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 # Dictionnaire pour stocker les données des groupes
 GROUP_DATA = {}
 
+@app.route('/')
+def home():
+    return "Le bot Telegram est actif !"
+
+
 # Charger les données des groupes depuis un fichier JSON (persistant)
 def load_group_data():
     global GROUP_DATA
