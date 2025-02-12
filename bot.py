@@ -10,7 +10,7 @@ from telegram.ext import Application, CommandHandler, CallbackContext
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Token du bot Telegram (défini via les variables d’environnement)
+# Token du bot Telegram (via variables d’environnement)
 TELEGRAM_BOT_TOKEN = "7516380781:AAE_XvPn_7KA6diabmcaZOqBMxBzXAHv0aw"
 if not TELEGRAM_BOT_TOKEN:
     raise ValueError("Le token du bot Telegram n'est pas défini !")
@@ -18,7 +18,7 @@ if not TELEGRAM_BOT_TOKEN:
 # Initialisation de l'application Telegram
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-# Base de données JSON pour stocker les groupes
+# Base de données JSON pour stocker les groupes et les joueurs
 GROUP_DATA_FILE = "group_data.json"
 GROUP_DATA = {}
 
@@ -58,6 +58,8 @@ async def help_command(update: Update, context: CallbackContext):
         "/addword [mot] - Ajouter un mot interdit\n"
         "/removeword [mot] - Supprimer un mot interdit\n"
         "/listwords - Voir la liste des mots interdits\n"
+        "/game - Lancer un jeu\n"
+        "/score - Voir son score\n"
     )
     await update.message.reply_text(help_text)
 
@@ -83,12 +85,55 @@ async def add_rules(update: Update, context: CallbackContext):
     save_group_data()
     await update.message.reply_text(f"Règles mises à jour :\n{rules_text}")
 
+# Commande /ban
+async def ban_user(update: Update, context: CallbackContext):
+    if not context.args:
+        await update.message.reply_text("Usage: /ban @username")
+        return
+    user = context.args[0]
+    await update.message.reply_text(f"L'utilisateur {user} a été banni ! 🚫")
+
+# Commande /unban
+async def unban_user(update: Update, context: CallbackContext):
+    if not context.args:
+        await update.message.reply_text("Usage: /unban @username")
+        return
+    user = context.args[0]
+    await update.message.reply_text(f"L'utilisateur {user} a été débanni ! ✅")
+
+# Commande /warn
+async def warn_user(update: Update, context: CallbackContext):
+    if not context.args:
+        await update.message.reply_text("Usage: /warn @username")
+        return
+    user = context.args[0]
+    await update.message.reply_text(f"L'utilisateur {user} a reçu un avertissement ! ⚠️")
+
 # Commande /leaderboard
 async def leaderboard(update: Update, context: CallbackContext):
     leaderboard_text = "Classement des groupes :\n"
     for group, data in GROUP_DATA.items():
         leaderboard_text += f"{group}: {data.get('score', 0)} points\n"
     await update.message.reply_text(leaderboard_text)
+
+# Commande /game (Jeu simple)
+async def start_game(update: Update, context: CallbackContext):
+    user_id = str(update.message.from_user.id)
+    if user_id not in GROUP_DATA:
+        GROUP_DATA[user_id] = {"score": 0}
+
+    score = GROUP_DATA[user_id]["score"]
+    new_score = score + 10  # Augmente le score de 10 points
+    GROUP_DATA[user_id]["score"] = new_score
+    save_group_data()
+
+    await update.message.reply_text(f"🎮 Jeu lancé ! +10 points 🏆 Score total : {new_score}")
+
+# Commande /score
+async def get_score(update: Update, context: CallbackContext):
+    user_id = str(update.message.from_user.id)
+    score = GROUP_DATA.get(user_id, {}).get("score", 0)
+    await update.message.reply_text(f"🏆 Votre score actuel : {score}")
 
 # Initialisation de Flask
 app = Flask(__name__)
@@ -101,15 +146,12 @@ def home():
 async def webhook():
     """Route du webhook qui traite les mises à jour de Telegram"""
     data = request.get_json()
-    logger.info(f"Requête reçue : {json.dumps(data, indent=4)}")  # Debug
+    logger.info(f"Requête reçue : {json.dumps(data, indent=4)}")
 
     if not data:
-        logger.error("Requête vide reçue.")
         return "Bad Request", 400
 
     update = Update.de_json(data, application.bot)
-
-    # Initialisation correcte avant le traitement
     await application.initialize()
     await application.process_update(update)
 
@@ -124,7 +166,12 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("rules", show_rules))
     application.add_handler(CommandHandler("setrules", add_rules))
+    application.add_handler(CommandHandler("ban", ban_user))
+    application.add_handler(CommandHandler("unban", unban_user))
+    application.add_handler(CommandHandler("warn", warn_user))
     application.add_handler(CommandHandler("leaderboard", leaderboard))
+    application.add_handler(CommandHandler("game", start_game))
+    application.add_handler(CommandHandler("score", get_score))
 
     # Définir le webhook
     webhook_url = f"https://ton-domaine-sur-render.com/{TELEGRAM_BOT_TOKEN}"
