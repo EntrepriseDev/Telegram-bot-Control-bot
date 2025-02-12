@@ -125,13 +125,12 @@ def webhook():
     import asyncio
 
     async def process():
-        await application.initialize()  # ✅ Correction ici
+        await application.initialize()  # Correction ici
         await application.process_update(update)
 
-    asyncio.run(process())  # ✅ Exécuter la coroutine correctement
+    asyncio.run(process())  # Exécuter la coroutine correctement
 
     return "OK", 200
-
 
 def main():
     """Démarrer l'application Flask et le bot Telegram"""
