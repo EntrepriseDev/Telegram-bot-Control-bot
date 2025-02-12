@@ -1,36 +1,50 @@
 import logging
 import json
+import os
+import asyncio
 from flask import Flask, request
-from telegram import Update
+from telegram import Update, Bot, ChatMember
 from telegram.ext import Application, CommandHandler, CallbackContext
 
 # Configuration du logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Token du bot Telegram
-TELEGRAM_BOT_TOKEN = "7516380781:AAE_XvPn_7KA6diabmcaZOqBMxBzXAHv0aw"
+# Token du bot Telegram (Remplace par ton vrai token avant de déployer)
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "7516380781:AAE_XvPn_7KA6diabmcaZOqBMxBzXAHv0aw")
 
 # Base de données des groupes (stockée en JSON)
+GROUP_DATA_FILE = "group_data.json"
 GROUP_DATA = {}
 
 # Charger les données depuis le fichier JSON
 def load_group_data():
     global GROUP_DATA
-    try:
-        with open('group_data.json', 'r') as f:
-            GROUP_DATA = json.load(f)
-    except FileNotFoundError:
+    if os.path.exists(GROUP_DATA_FILE):
+        try:
+            with open(GROUP_DATA_FILE, "r") as f:
+                GROUP_DATA = json.load(f)
+        except json.JSONDecodeError:
+            logger.error("Erreur de lecture du fichier JSON, réinitialisation.")
+            GROUP_DATA = {}
+    else:
         GROUP_DATA = {}
 
 # Sauvegarder les données
 def save_group_data():
     try:
-        with open('group_data.json', 'w') as f:
+        with open(GROUP_DATA_FILE, "w") as f:
             json.dump(GROUP_DATA, f, indent=4)
         logger.info("Données sauvegardées avec succès.")
     except Exception as e:
         logger.error(f"Erreur lors de la sauvegarde : {e}")
+
+# Vérifier si l'utilisateur est admin
+async def is_admin(update: Update, user_id: int):
+    chat_id = update.message.chat_id
+    bot = update.get_bot()
+    member = await bot.get_chat_member(chat_id, user_id)
+    return member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
 
 # Commande /start
 async def start(update: Update, context: CallbackContext) -> None:
@@ -42,9 +56,9 @@ async def help_command(update: Update, context: CallbackContext) -> None:
         "/start - Démarrer le bot\n"
         "/help - Voir la liste des commandes\n"
         "/rules - Afficher les règles\n"
-        "/setrules [texte] - Ajouter une règle\n"
-        "/ban [@user] - Bannir un utilisateur\n"
-        "/unban [@user] - Débannir un utilisateur\n"
+        "/setrules [texte] - Ajouter une règle (Admin seulement)\n"
+        "/ban [@user] - Bannir un utilisateur (Admin seulement)\n"
+        "/unban [@user] - Débannir un utilisateur (Admin seulement)\n"
         "/warn [@user] - Avertir un utilisateur\n"
         "/leaderboard - Voir le classement des groupes\n"
         "/addword [mot] - Ajouter un mot interdit\n"
@@ -59,10 +73,14 @@ async def show_rules(update: Update, context: CallbackContext) -> None:
     rules = GROUP_DATA.get(chat_id, {}).get("rules", "Aucune règle définie.")
     await update.message.reply_text(f"Règles :\n{rules}")
 
-# Commande /setrules
+# Commande /setrules (admin seulement)
 async def add_rules(update: Update, context: CallbackContext) -> None:
     chat_id = str(update.message.chat.id)
     rules_text = ' '.join(context.args)
+    
+    if not await is_admin(update, update.message.from_user.id):
+        await update.message.reply_text("Seuls les administrateurs peuvent modifier les règles.")
+        return
     
     if not rules_text:
         await update.message.reply_text("Veuillez fournir le texte de la règle après la commande.")
@@ -74,47 +92,6 @@ async def add_rules(update: Update, context: CallbackContext) -> None:
     GROUP_DATA[chat_id]["rules"] = rules_text
     save_group_data()
     await update.message.reply_text(f"Règles mises à jour :\n{rules_text}")
-
-# Commande /ban
-async def ban_user(update: Update, context: CallbackContext) -> None:
-    if not context.args:
-        await update.message.reply_text("Veuillez mentionner un utilisateur à bannir.")
-        return
-
-    user = context.args[0]
-    try:
-        user_id = user.replace('@', '')  # Suppression du '@' si mentionné
-
-        # Bannir l'utilisateur
-        await update.message.chat.kick_member(user_id)
-        await update.message.reply_text(f"L'utilisateur {user} a été banni.")
-    except Exception as e:
-        logger.error(f"Erreur lors du bannissement de l'utilisateur : {e}")
-        await update.message.reply_text("Impossible de bannir cet utilisateur.")
-
-# Commande /unban
-async def unban_user(update: Update, context: CallbackContext) -> None:
-    if not context.args:
-        await update.message.reply_text("Veuillez mentionner un utilisateur à débannir.")
-        return
-
-    user = context.args[0]
-    try:
-        user_id = user.replace('@', '')  # Suppression du '@' si mentionné
-
-        # Débannir l'utilisateur
-        await update.message.chat.unban_member(user_id)
-        await update.message.reply_text(f"L'utilisateur {user} a été débanni.")
-    except Exception as e:
-        logger.error(f"Erreur lors du débannissement de l'utilisateur : {e}")
-        await update.message.reply_text("Impossible de débannir cet utilisateur.")
-
-# Commande /warn
-async def warn_user(update: Update, context: CallbackContext) -> None:
-    if not context.args:
-        await update.message.reply_text("Veuillez mentionner un utilisateur à avertir.")
-        return
-    await update.message.reply_text(f"L'utilisateur {context.args[0]} a été averti.")
 
 # Commande /leaderboard
 async def leaderboard(update: Update, context: CallbackContext) -> None:
@@ -131,19 +108,22 @@ def home():
     return "Le bot Telegram est en ligne ! 🚀"
 
 @app.route(f"/{TELEGRAM_BOT_TOKEN}", methods=["POST"])
-async def webhook():
+def webhook():
     data = request.get_json()
-    logger.info(f"Requête reçue : {json.dumps(data, indent=4)}")  # Debug
+    logger.info(f"Requête reçue : {json.dumps(data, indent=4)}")
 
     if not data:
-        logger.error("Requête vide reçue.")
         return "Bad Request", 400
     
     update = Update.de_json(data, bot)
-    logger.info("Mise à jour Telegram reçue, traitement en cours...")
-
-    # Directement traiter la mise à jour avec await, sans asyncio.run()
-    await application.process_update(update)
+    
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    async def process():
+        await application.process_update(update)
+    
+    loop.run_until_complete(process())  # ✅ Correction de l'event loop
 
     return "OK", 200
 
@@ -161,9 +141,6 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("rules", show_rules))
     application.add_handler(CommandHandler("setrules", add_rules))
-    application.add_handler(CommandHandler("ban", ban_user))
-    application.add_handler(CommandHandler("unban", unban_user))
-    application.add_handler(CommandHandler("warn", warn_user))
     application.add_handler(CommandHandler("leaderboard", leaderboard))
 
     # Définir le webhook
