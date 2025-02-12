@@ -123,9 +123,15 @@ def webhook():
     logger.info("Mise à jour Telegram reçue, traitement en cours...")
 
     import asyncio
-    asyncio.run(application.process_update(update))  # ✅ Correction ici
+
+    async def process():
+        await application.initialize()  # ✅ Correction ici
+        await application.process_update(update)
+
+    asyncio.run(process())  # ✅ Exécuter la coroutine correctement
 
     return "OK", 200
+
 
 def main():
     """Démarrer l'application Flask et le bot Telegram"""
