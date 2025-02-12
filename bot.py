@@ -116,18 +116,47 @@ async def leaderboard(update: Update, context: CallbackContext):
         leaderboard_text += f"{group}: {data.get('score', 0)} points\n"
     await update.message.reply_text(leaderboard_text)
 
-# Commande /game (Jeu simple)
+# Générer une suite logique aléatoire
+def generate_math_sequence():
+    sequence_type = random.choice(["arithmétique", "géométrique", "carrés", "fibonacci"])
+    
+    if sequence_type == "arithmétique":
+        start = random.randint(1, 20)
+        step = random.randint(2, 10)
+        sequence = [start + step * i for i in range(4)]
+        answer = sequence[-1] + step
+    
+    elif sequence_type == "géométrique":
+        start = random.randint(1, 5)
+        factor = random.randint(2, 5)
+        sequence = [start * (factor ** i) for i in range(4)]
+        answer = sequence[-1] * factor
+
+    elif sequence_type == "carrés":
+        start = random.randint(1, 5)
+        sequence = [(start + i) ** 2 for i in range(4)]
+        answer = (start + 4) ** 2
+
+    else:  # Fibonacci
+        a, b = random.randint(1, 5), random.randint(1, 5)
+        sequence = [a, b]
+        for _ in range(2):
+            sequence.append(sequence[-1] + sequence[-2])
+        answer = sequence[-1] + sequence[-2]
+
+    return sequence, answer
+
+# Commande /game pour commencer un jeu
 async def start_game(update: Update, context: CallbackContext):
     user_id = str(update.message.from_user.id)
-    if user_id not in GROUP_DATA:
-        GROUP_DATA[user_id] = {"score": 0}
+    sequence, answer = generate_math_sequence()
 
-    score = GROUP_DATA[user_id]["score"]
-    new_score = score + 10  # Augmente le score de 10 points
-    GROUP_DATA[user_id]["score"] = new_score
-    save_group_data()
+    # Sauvegarde de la réponse attendue
+    GAME_DATA[user_id] = {"sequence": sequence, "answer": answer}
+    save_game_data()
 
-    await update.message.reply_text(f"🎮 Jeu lancé ! +10 points 🏆 Score total : {new_score}")
+    await update.message.reply_text(f"🔢 Trouvez le nombre suivant :\n{', '.join(map(str, sequence))}, ?")
+
 
 # Commande /score
 async def get_score(update: Update, context: CallbackContext):
