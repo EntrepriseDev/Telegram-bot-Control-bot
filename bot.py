@@ -80,14 +80,34 @@ async def ban_user(update: Update, context: CallbackContext) -> None:
     if not context.args:
         await update.message.reply_text("Veuillez mentionner un utilisateur à bannir.")
         return
-    await update.message.reply_text(f"L'utilisateur {context.args[0]} a été banni.")
+
+    user = context.args[0]
+    try:
+        user_id = user.replace('@', '')  # Suppression du '@' si mentionné
+
+        # Bannir l'utilisateur
+        await update.message.chat.kick_member(user_id)
+        await update.message.reply_text(f"L'utilisateur {user} a été banni.")
+    except Exception as e:
+        logger.error(f"Erreur lors du bannissement de l'utilisateur : {e}")
+        await update.message.reply_text("Impossible de bannir cet utilisateur.")
 
 # Commande /unban
 async def unban_user(update: Update, context: CallbackContext) -> None:
     if not context.args:
         await update.message.reply_text("Veuillez mentionner un utilisateur à débannir.")
         return
-    await update.message.reply_text(f"L'utilisateur {context.args[0]} a été débanni.")
+
+    user = context.args[0]
+    try:
+        user_id = user.replace('@', '')  # Suppression du '@' si mentionné
+
+        # Débannir l'utilisateur
+        await update.message.chat.unban_member(user_id)
+        await update.message.reply_text(f"L'utilisateur {user} a été débanni.")
+    except Exception as e:
+        logger.error(f"Erreur lors du débannissement de l'utilisateur : {e}")
+        await update.message.reply_text("Impossible de débannir cet utilisateur.")
 
 # Commande /warn
 async def warn_user(update: Update, context: CallbackContext) -> None:
