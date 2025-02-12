@@ -113,8 +113,8 @@ def home():
 @app.route(f"/{TELEGRAM_BOT_TOKEN}", methods=["POST"])
 def webhook():
     data = request.get_json()
-    logger.info(f"Requête reçue : {json.dumps(data, indent=4)}")  # Affiche les données reçues
-    
+    logger.info(f"Requête reçue : {json.dumps(data, indent=4)}")  # Debug
+
     if not data:
         logger.error("Requête vide reçue.")
         return "Bad Request", 400
@@ -122,7 +122,9 @@ def webhook():
     update = Update.de_json(data, bot)
     logger.info("Mise à jour Telegram reçue, traitement en cours...")
 
-    application.process_update(update)
+    import asyncio
+    asyncio.run(application.process_update(update))  # ✅ Correction ici
+
     return "OK", 200
 
 def main():
