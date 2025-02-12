@@ -1,7 +1,6 @@
 import os
 import logging
 import json
-import random
 import asyncio
 from flask import Flask, request
 from telegram import Update
@@ -12,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Token du bot Telegram (via variables d’environnement)
-TELEGRAM_BOT_TOKEN = "7516380781:AAE_XvPn_7KA6diabmcaZOqBMxBzXAHv0aw"
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TELEGRAM_BOT_TOKEN:
     raise ValueError("Le token du bot Telegram n'est pas défini !")
 
@@ -117,98 +116,24 @@ async def leaderboard(update: Update, context: CallbackContext):
         leaderboard_text += f"{group}: {data.get('score', 0)} points\n"
     await update.message.reply_text(leaderboard_text)
 
-# Fichiers de stockage
-SCORES_FILE = "scores.json"
-GAME_FILE = "game_data.json"
-
-# Charger et sauvegarder les données
-def load_data(file):
-    try:
-        with open(file, "r") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-def save_data(file, data):
-    with open(file, "w") as f:
-        json.dump(data, f)
-
-# Chargement des scores et jeux en cours
-SCORES = load_data(SCORES_FILE)
-GAME_DATA = load_data(GAME_FILE)
-
-# Générer une suite mathématique aléatoire
-def generate_math_sequence():
-    sequence_type = random.choice(["arithmétique", "géométrique", "carrés", "fibonacci"])
-
-    if sequence_type == "arithmétique":
-        start, step = random.randint(1, 20), random.randint(2, 10)
-        sequence = [start + step * i for i in range(4)]
-        answer = sequence[-1] + step
-
-    elif sequence_type == "géométrique":
-        start, factor = random.randint(1, 5), random.randint(2, 5)
-        sequence = [start * (factor ** i) for i in range(4)]
-        answer = sequence[-1] * factor
-
-    elif sequence_type == "carrés":
-        start = random.randint(1, 5)
-        sequence = [(start + i) ** 2 for i in range(4)]
-        answer = (start + 4) ** 2
-
-    else:  # Fibonacci
-        a, b = random.randint(1, 5), random.randint(1, 5)
-        sequence = [a, b]
-        for _ in range(2):
-            sequence.append(sequence[-1] + sequence[-2])
-        answer = sequence[-1] + sequence[-2]
-
-    return sequence, answer
-
-# Commande /game pour commencer une partie
+# Commande /game (Jeu simple)
 async def start_game(update: Update, context: CallbackContext):
     user_id = str(update.message.from_user.id)
-    sequence, answer = generate_math_sequence()
+    if user_id not in GROUP_DATA:
+        GROUP_DATA[user_id] = {"score": 0}
 
-    # Sauvegarde de la réponse attendue
-    GAME_DATA[user_id] = {"sequence": sequence, "answer": answer}
-    save_data(GAME_FILE, GAME_DATA)
+    score = GROUP_DATA[user_id]["score"]
+    new_score = score + 10  # Augmente le score de 10 points
+    GROUP_DATA[user_id]["score"] = new_score
+    save_group_data()
 
-    await update.message.reply_text(f"🔢 Trouvez le nombre suivant :\n{', '.join(map(str, sequence))}, ?")
+    await update.message.reply_text(f"🎮 Jeu lancé ! +10 points 🏆 Score total : {new_score}")
 
-# Vérification de la réponse utilisateur
-async def check_answer(update: Update, context: CallbackContext):
+# Commande /score
+async def get_score(update: Update, context: CallbackContext):
     user_id = str(update.message.from_user.id)
-    
-    if user_id not in GAME_DATA:
-        return
-
-    try:
-        user_answer = int(update.message.text)
-    except ValueError:
-        await update.message.reply_text("❌ Veuillez entrer un nombre valide !")
-        return
-
-    correct_answer = GAME_DATA[user_id]["answer"]
-
-    if user_answer == correct_answer:
-        SCORES[user_id] = SCORES.get(user_id, 0) + 10
-        save_data(SCORES_FILE, SCORES)
-
-        await update.message.reply_text(f"✅ Bonne réponse ! 🎉 +10 points 🏆\nVotre score actuel : {SCORES[user_id]} points.")
-
-        # Supprimer le jeu en cours
-        del GAME_DATA[user_id]
-        save_data(GAME_FILE, GAME_DATA)
-    else:
-        await update.message.reply_text("❌ Mauvaise réponse. Essayez encore !")
-
-# Commande /score pour voir le score
-async def show_score(update: Update, context: CallbackContext):
-    user_id = str(update.message.from_user.id)
-    score = SCORES.get(user_id, 0)
-
-    await update.message.reply_text(f"🏆 Votre score actuel : {score} points.")
+    score = GROUP_DATA.get(user_id, {}).get("score", 0)
+    await update.message.reply_text(f"🏆 Votre score actuel : {score}")
 
 # Initialisation de Flask
 app = Flask(__name__)
@@ -245,7 +170,7 @@ def main():
     application.add_handler(CommandHandler("unban", unban_user))
     application.add_handler(CommandHandler("warn", warn_user))
     application.add_handler(CommandHandler("leaderboard", leaderboard))
-    application.add_handler(CommandHandler("game", start_game))
+    # application.add_handler(CommandHandler("game", start_game))
     application.add_handler(CommandHandler("score", get_score))
 
     # Définir le webhook
