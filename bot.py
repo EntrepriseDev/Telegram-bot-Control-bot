@@ -113,10 +113,15 @@ def home():
 @app.route(f"/{TELEGRAM_BOT_TOKEN}", methods=["POST"])
 def webhook():
     data = request.get_json()
-    logger.info(f"Requête reçue : {json.dumps(data, indent=4)}")  # Ajoute cette ligne
+    logger.info(f"Requête reçue : {json.dumps(data, indent=4)}")  # Debugging
+
+    if not data:
+        return "No data", 400  # Retourne une erreur si aucune requête reçue
+
     update = Update.de_json(data, bot)
     application.process_update(update)
     return "OK", 200
+
 
 
 def main():
