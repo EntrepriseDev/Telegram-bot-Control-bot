@@ -157,6 +157,26 @@ async def start_game(update: Update, context: CallbackContext):
 
     await update.message.reply_text(f"🔢 Trouvez le nombre suivant :\n{', '.join(map(str, sequence))}, ?")
 
+# Vérifier la réponse de l'utilisateur
+async def check_answer(update: Update, context: CallbackContext):
+    user_id = str(update.message.from_user.id)
+    if user_id not in GAME_DATA:
+        return  # Ignorer les messages hors du jeu
+
+    try:
+        user_answer = int(update.message.text)
+    except ValueError:
+        return  # L'utilisateur n'a pas envoyé un nombre
+
+    correct_answer = GAME_DATA[user_id]["answer"]
+
+    if user_answer == correct_answer:
+        await update.message.reply_text("✅ Bravo ! Bonne réponse. 🎉 +10 points 🏆")
+        del GAME_DATA[user_id]  # Effacer le jeu en cours
+        save_game_data()
+    else:
+        await update.message.reply_text("❌ Mauvaise réponse. Réessayez !")
+
 
 # Commande /score
 async def get_score(update: Update, context: CallbackContext):
