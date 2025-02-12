@@ -1,6 +1,7 @@
 import os
 import logging
 import json
+import random
 import asyncio
 from flask import Flask, request
 from telegram import Update
@@ -116,19 +117,37 @@ async def leaderboard(update: Update, context: CallbackContext):
         leaderboard_text += f"{group}: {data.get('score', 0)} points\n"
     await update.message.reply_text(leaderboard_text)
 
-# Générer une suite logique aléatoire
+# Fichiers de stockage
+SCORES_FILE = "scores.json"
+GAME_FILE = "game_data.json"
+
+# Charger et sauvegarder les données
+def load_data(file):
+    try:
+        with open(file, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+def save_data(file, data):
+    with open(file, "w") as f:
+        json.dump(data, f)
+
+# Chargement des scores et jeux en cours
+SCORES = load_data(SCORES_FILE)
+GAME_DATA = load_data(GAME_FILE)
+
+# Générer une suite mathématique aléatoire
 def generate_math_sequence():
     sequence_type = random.choice(["arithmétique", "géométrique", "carrés", "fibonacci"])
-    
+
     if sequence_type == "arithmétique":
-        start = random.randint(1, 20)
-        step = random.randint(2, 10)
+        start, step = random.randint(1, 20), random.randint(2, 10)
         sequence = [start + step * i for i in range(4)]
         answer = sequence[-1] + step
-    
+
     elif sequence_type == "géométrique":
-        start = random.randint(1, 5)
-        factor = random.randint(2, 5)
+        start, factor = random.randint(1, 5), random.randint(2, 5)
         sequence = [start * (factor ** i) for i in range(4)]
         answer = sequence[-1] * factor
 
@@ -146,43 +165,50 @@ def generate_math_sequence():
 
     return sequence, answer
 
-# Commande /game pour commencer un jeu
+# Commande /game pour commencer une partie
 async def start_game(update: Update, context: CallbackContext):
     user_id = str(update.message.from_user.id)
     sequence, answer = generate_math_sequence()
 
     # Sauvegarde de la réponse attendue
     GAME_DATA[user_id] = {"sequence": sequence, "answer": answer}
-    save_game_data()
+    save_data(GAME_FILE, GAME_DATA)
 
     await update.message.reply_text(f"🔢 Trouvez le nombre suivant :\n{', '.join(map(str, sequence))}, ?")
 
-# Vérifier la réponse de l'utilisateur
+# Vérification de la réponse utilisateur
 async def check_answer(update: Update, context: CallbackContext):
     user_id = str(update.message.from_user.id)
+    
     if user_id not in GAME_DATA:
-        return  # Ignorer les messages hors du jeu
+        return
 
     try:
         user_answer = int(update.message.text)
     except ValueError:
-        return  # L'utilisateur n'a pas envoyé un nombre
+        await update.message.reply_text("❌ Veuillez entrer un nombre valide !")
+        return
 
     correct_answer = GAME_DATA[user_id]["answer"]
 
     if user_answer == correct_answer:
-        await update.message.reply_text("✅ Bravo ! Bonne réponse. 🎉 +10 points 🏆")
-        del GAME_DATA[user_id]  # Effacer le jeu en cours
-        save_game_data()
+        SCORES[user_id] = SCORES.get(user_id, 0) + 10
+        save_data(SCORES_FILE, SCORES)
+
+        await update.message.reply_text(f"✅ Bonne réponse ! 🎉 +10 points 🏆\nVotre score actuel : {SCORES[user_id]} points.")
+
+        # Supprimer le jeu en cours
+        del GAME_DATA[user_id]
+        save_data(GAME_FILE, GAME_DATA)
     else:
-        await update.message.reply_text("❌ Mauvaise réponse. Réessayez !")
+        await update.message.reply_text("❌ Mauvaise réponse. Essayez encore !")
 
-
-# Commande /score
-async def get_score(update: Update, context: CallbackContext):
+# Commande /score pour voir le score
+async def show_score(update: Update, context: CallbackContext):
     user_id = str(update.message.from_user.id)
-    score = GROUP_DATA.get(user_id, {}).get("score", 0)
-    await update.message.reply_text(f"🏆 Votre score actuel : {score}")
+    score = SCORES.get(user_id, 0)
+
+    await update.message.reply_text(f"🏆 Votre score actuel : {score} points.")
 
 # Initialisation de Flask
 app = Flask(__name__)
