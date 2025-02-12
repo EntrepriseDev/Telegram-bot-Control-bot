@@ -131,7 +131,7 @@ def home():
     return "Le bot Telegram est en ligne ! 🚀"
 
 @app.route(f"/{TELEGRAM_BOT_TOKEN}", methods=["POST"])
-def webhook():
+async def webhook():
     data = request.get_json()
     logger.info(f"Requête reçue : {json.dumps(data, indent=4)}")  # Debug
 
@@ -142,13 +142,8 @@ def webhook():
     update = Update.de_json(data, bot)
     logger.info("Mise à jour Telegram reçue, traitement en cours...")
 
-    import asyncio
-
-    async def process():
-        await application.initialize()  # Correction ici
-        await application.process_update(update)
-
-    asyncio.run(process())  # Exécuter la coroutine correctement
+    # Directement traiter la mise à jour avec await, sans asyncio.run()
+    await application.process_update(update)
 
     return "OK", 200
 
