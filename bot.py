@@ -113,16 +113,17 @@ def home():
 @app.route(f"/{TELEGRAM_BOT_TOKEN}", methods=["POST"])
 def webhook():
     data = request.get_json()
-    logger.info(f"Requête reçue : {json.dumps(data, indent=4)}")  # Debugging
-
+    logger.info(f"Requête reçue : {json.dumps(data, indent=4)}")  # Affiche les données reçues
+    
     if not data:
-        return "No data", 400  # Retourne une erreur si aucune requête reçue
-
+        logger.error("Requête vide reçue.")
+        return "Bad Request", 400
+    
     update = Update.de_json(data, bot)
+    logger.info("Mise à jour Telegram reçue, traitement en cours...")
+
     application.process_update(update)
     return "OK", 200
-
-
 
 def main():
     """Démarrer l'application Flask et le bot Telegram"""
