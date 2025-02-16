@@ -3,7 +3,7 @@ import logging
 import json
 import asyncio
 from flask import Flask, request
-from telegram import Update  # Retirer TelegramError
+from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackContext
 
 # Configuration du logger
@@ -116,11 +116,12 @@ async def ban_user(update: Update, context: CallbackContext):
             GROUP_DATA[chat_id] = {}
         if "banned_users" not in GROUP_DATA[chat_id]:
             GROUP_DATA[chat_id]["banned_users"] = []
-        GROUP_DATA[chat_id]["banned_users"].append(user_id)
+        if user_id not in GROUP_DATA[chat_id]["banned_users"]:
+            GROUP_DATA[chat_id]["banned_users"].append(user_id)
         save_group_data()
 
         await update.message.reply_text(f"L'utilisateur {user_mention} a été banni ! 🚫")
-    except TelegramError as e:
+    except Exception as e:
         logger.error(f"Erreur lors du bannissement : {e}")
         await update.message.reply_text(f"Impossible de bannir l'utilisateur {user_mention}.")
 
@@ -149,11 +150,12 @@ async def unban_user(update: Update, context: CallbackContext):
         # Retirer l'utilisateur de la liste des bannis
         chat_id = str(update.message.chat.id)
         if chat_id in GROUP_DATA and "banned_users" in GROUP_DATA[chat_id]:
-            GROUP_DATA[chat_id]["banned_users"].remove(user_id)
-            save_group_data()
+            if user_id in GROUP_DATA[chat_id]["banned_users"]:
+                GROUP_DATA[chat_id]["banned_users"].remove(user_id)
+                save_group_data()
 
         await update.message.reply_text(f"L'utilisateur {user_mention} a été débanni ! ✅")
-    except TelegramError as e:
+    except Exception as e:
         logger.error(f"Erreur lors du débannissement : {e}")
         await update.message.reply_text(f"Impossible de débannir l'utilisateur {user_mention}.")
 
@@ -174,9 +176,9 @@ async def get_user_id_from_mention(update: Update, mention: str):
     """Récupère l'ID de l'utilisateur à partir de son mention (format @username)."""
     try:
         username = mention.lstrip('@')
-        user = await update.message.chat.get_member(username)
-        return user.user.id
-    except TelegramError as e:
+        member = await update.message.chat.get_member(username)
+        return member.user.id
+    except Exception as e:
         logger.error(f"Erreur lors de la recherche de l'utilisateur {mention}: {e}")
         return None
 
@@ -220,7 +222,6 @@ def main():
     application.add_handler(CommandHandler("setrules", add_rules))
     application.add_handler(CommandHandler("ban", ban_user))
     application.add_handler(CommandHandler("unban", unban_user))
-    application.add_handler(CommandHandler("warn", warn_user))
     application.add_handler(CommandHandler("leaderboard", leaderboard))
     application.add_handler(CommandHandler("listban", list_banned_users))
 
