@@ -10,7 +10,7 @@ from telegram.ext import Application, CommandHandler, CallbackContext
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Token du bot Telegram (via variables d’environnement)
+# Token du bot Telegram (via variables d'environnement)
 TELEGRAM_BOT_TOKEN = "7516380781:AAE_XvPn_7KA6diabmcaZOqBMxBzXAHv0aw"
 if not TELEGRAM_BOT_TOKEN:
     raise ValueError("Le token du bot Telegram n'est pas défini !")
@@ -28,7 +28,7 @@ def load_group_data():
     try:
         with open(GROUP_DATA_FILE, 'r') as f:
             GROUP_DATA = json.load(f)
-    except FileNotFoundError:
+    except (FileNotFoundError, json.JSONDecodeError):
         GROUP_DATA = {}
 
 # Sauvegarder les données des groupes
@@ -75,8 +75,13 @@ async def show_rules(update: Update, context: CallbackContext):
 # Commande /setrules
 async def add_rules(update: Update, context: CallbackContext):
     chat_id = str(update.message.chat.id)
-    rules_text = ' '.join(context.args)
+    
+    if not await is_admin(update):
+        await update.message.reply_text("Vous devez être un administrateur pour définir des règles.")
+        return
 
+    rules_text = ' '.join(context.args)
+    
     if not rules_text:
         await update.message.reply_text("Veuillez fournir le texte de la règle après la commande.")
         return
@@ -95,7 +100,7 @@ async def ban_user(update: Update, context: CallbackContext):
         await update.message.reply_text("Vous devez être un administrateur pour bannir un utilisateur.")
         return
 
-    if not context.args:
+    if not context.args or len(context.args) < 1:
         await update.message.reply_text("Usage: /ban @username")
         return
 
@@ -132,7 +137,7 @@ async def unban_user(update: Update, context: CallbackContext):
         await update.message.reply_text("Vous devez être un administrateur pour débannir un utilisateur.")
         return
 
-    if not context.args:
+    if not context.args or len(context.args) < 1:
         await update.message.reply_text("Usage: /unban @username")
         return
 
@@ -159,17 +164,12 @@ async def unban_user(update: Update, context: CallbackContext):
         logger.error(f"Erreur lors du débannissement : {e}")
         await update.message.reply_text(f"Impossible de débannir l'utilisateur {user_mention}.")
 
-# Commande /listban
-async def list_banned_users(update: Update, context: CallbackContext):
-    """Lister les utilisateurs bannis du groupe."""
-    chat_id = str(update.message.chat.id)
-    banned_users = GROUP_DATA.get(chat_id, {}).get("banned_users", [])
-    
-    if not banned_users:
-        await update.message.reply_text("Aucun utilisateur banni dans ce groupe.")
-    else:
-        banned_list = "\n".join([f"@{user}" for user in banned_users])
-        await update.message.reply_text(f"Utilisateurs bannis :\n{banned_list}")
+# Commande /leaderboard
+async def leaderboard(update: Update, context: CallbackContext):
+    leaderboard_text = "Classement des groupes :\n"
+    for group, data in GROUP_DATA.items():
+        leaderboard_text += f"{group}: {data.get('score', 0)} points\n"
+    await update.message.reply_text(leaderboard_text)
 
 # Fonction pour récupérer l'ID d'un utilisateur à partir de son mention
 async def get_user_id_from_mention(update: Update, mention: str):
@@ -181,13 +181,6 @@ async def get_user_id_from_mention(update: Update, mention: str):
     except Exception as e:
         logger.error(f"Erreur lors de la recherche de l'utilisateur {mention}: {e}")
         return None
-
-# Commande /leaderboard
-async def leaderboard(update: Update, context: CallbackContext):
-    leaderboard_text = "Classement des groupes :\n"
-    for group, data in GROUP_DATA.items():
-        leaderboard_text += f"{group}: {data.get('score', 0)} points\n"
-    await update.message.reply_text(leaderboard_text)
 
 # Initialisation de Flask
 app = Flask(__name__)
@@ -223,7 +216,6 @@ def main():
     application.add_handler(CommandHandler("ban", ban_user))
     application.add_handler(CommandHandler("unban", unban_user))
     application.add_handler(CommandHandler("leaderboard", leaderboard))
-    application.add_handler(CommandHandler("listban", list_banned_users))
 
     # Définir le webhook
     webhook_url = f"https://telegram-bot-control-bot.onrender.com/{TELEGRAM_BOT_TOKEN}"
