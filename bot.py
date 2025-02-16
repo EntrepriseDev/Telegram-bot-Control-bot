@@ -4,7 +4,7 @@ import json
 import asyncio
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application, CommandHandler, CallbackContext
+from telegram.ext import Application, CommandHandler, CallbackContext, TelegramError
 
 # Configuration du logger
 logging.basicConfig(level=logging.INFO)
@@ -40,6 +40,11 @@ def save_group_data():
     except Exception as e:
         logger.error(f"Erreur lors de la sauvegarde : {e}")
 
+# Vérifier si l'utilisateur est un admin du groupe
+async def is_admin(update: Update):
+    chat_member = await update.message.chat.get_member(update.message.from_user.id)
+    return chat_member.status in ['administrator', 'creator']
+
 # Commande /start
 async def start(update: Update, context: CallbackContext):
     await update.message.reply_text("Bienvenue ! Utilisez /help pour voir les commandes.")
@@ -58,8 +63,6 @@ async def help_command(update: Update, context: CallbackContext):
         "/addword [mot] - Ajouter un mot interdit\n"
         "/removeword [mot] - Supprimer un mot interdit\n"
         "/listwords - Voir la liste des mots interdits\n"
-        "/game - Lancer un jeu\n"
-        "/score - Voir son score\n"
     )
     await update.message.reply_text(help_text)
 
@@ -87,27 +90,95 @@ async def add_rules(update: Update, context: CallbackContext):
 
 # Commande /ban
 async def ban_user(update: Update, context: CallbackContext):
+    """Bannir un utilisateur du groupe."""
+    if not await is_admin(update):
+        await update.message.reply_text("Vous devez être un administrateur pour bannir un utilisateur.")
+        return
+
     if not context.args:
         await update.message.reply_text("Usage: /ban @username")
         return
-    user = context.args[0]
-    await update.message.reply_text(f"L'utilisateur {user} a été banni ! 🚫")
+
+    user_mention = context.args[0]  # Récupérer l'argument (le nom d'utilisateur)
+    
+    # Extraire l'ID de l'utilisateur à partir de son mention @username
+    user_id = await get_user_id_from_mention(update, user_mention)
+    if not user_id:
+        await update.message.reply_text(f"L'utilisateur {user_mention} n'a pas été trouvé.")
+        return
+
+    try:
+        # Bannir l'utilisateur du groupe
+        await update.message.chat.ban_member(user_id)
+        # Ajouter l'utilisateur à la liste des bannis dans les données
+        chat_id = str(update.message.chat.id)
+        if chat_id not in GROUP_DATA:
+            GROUP_DATA[chat_id] = {}
+        if "banned_users" not in GROUP_DATA[chat_id]:
+            GROUP_DATA[chat_id]["banned_users"] = []
+        GROUP_DATA[chat_id]["banned_users"].append(user_id)
+        save_group_data()
+
+        await update.message.reply_text(f"L'utilisateur {user_mention} a été banni ! 🚫")
+    except TelegramError as e:
+        logger.error(f"Erreur lors du bannissement : {e}")
+        await update.message.reply_text(f"Impossible de bannir l'utilisateur {user_mention}.")
 
 # Commande /unban
 async def unban_user(update: Update, context: CallbackContext):
+    """Débannir un utilisateur du groupe."""
+    if not await is_admin(update):
+        await update.message.reply_text("Vous devez être un administrateur pour débannir un utilisateur.")
+        return
+
     if not context.args:
         await update.message.reply_text("Usage: /unban @username")
         return
-    user = context.args[0]
-    await update.message.reply_text(f"L'utilisateur {user} a été débanni ! ✅")
 
-# Commande /warn
-async def warn_user(update: Update, context: CallbackContext):
-    if not context.args:
-        await update.message.reply_text("Usage: /warn @username")
+    user_mention = context.args[0]
+    
+    # Extraire l'ID de l'utilisateur à partir de son mention @username
+    user_id = await get_user_id_from_mention(update, user_mention)
+    if not user_id:
+        await update.message.reply_text(f"L'utilisateur {user_mention} n'a pas été trouvé.")
         return
-    user = context.args[0]
-    await update.message.reply_text(f"L'utilisateur {user} a reçu un avertissement ! ⚠️")
+
+    try:
+        # Débannir l'utilisateur du groupe
+        await update.message.chat.unban_member(user_id)
+        # Retirer l'utilisateur de la liste des bannis
+        chat_id = str(update.message.chat.id)
+        if chat_id in GROUP_DATA and "banned_users" in GROUP_DATA[chat_id]:
+            GROUP_DATA[chat_id]["banned_users"].remove(user_id)
+            save_group_data()
+
+        await update.message.reply_text(f"L'utilisateur {user_mention} a été débanni ! ✅")
+    except TelegramError as e:
+        logger.error(f"Erreur lors du débannissement : {e}")
+        await update.message.reply_text(f"Impossible de débannir l'utilisateur {user_mention}.")
+
+# Commande /listban
+async def list_banned_users(update: Update, context: CallbackContext):
+    """Lister les utilisateurs bannis du groupe."""
+    chat_id = str(update.message.chat.id)
+    banned_users = GROUP_DATA.get(chat_id, {}).get("banned_users", [])
+    
+    if not banned_users:
+        await update.message.reply_text("Aucun utilisateur banni dans ce groupe.")
+    else:
+        banned_list = "\n".join([f"@{user}" for user in banned_users])
+        await update.message.reply_text(f"Utilisateurs bannis :\n{banned_list}")
+
+# Fonction pour récupérer l'ID d'un utilisateur à partir de son mention
+async def get_user_id_from_mention(update: Update, mention: str):
+    """Récupère l'ID de l'utilisateur à partir de son mention (format @username)."""
+    try:
+        username = mention.lstrip('@')
+        user = await update.message.chat.get_member(username)
+        return user.user.id
+    except TelegramError as e:
+        logger.error(f"Erreur lors de la recherche de l'utilisateur {mention}: {e}")
+        return None
 
 # Commande /leaderboard
 async def leaderboard(update: Update, context: CallbackContext):
@@ -115,25 +186,6 @@ async def leaderboard(update: Update, context: CallbackContext):
     for group, data in GROUP_DATA.items():
         leaderboard_text += f"{group}: {data.get('score', 0)} points\n"
     await update.message.reply_text(leaderboard_text)
-
-# Commande /game (Jeu simple)
-async def start_game(update: Update, context: CallbackContext):
-    user_id = str(update.message.from_user.id)
-    if user_id not in GROUP_DATA:
-        GROUP_DATA[user_id] = {"score": 0}
-
-    score = GROUP_DATA[user_id]["score"]
-    new_score = score + 10  # Augmente le score de 10 points
-    GROUP_DATA[user_id]["score"] = new_score
-    save_group_data()
-
-    await update.message.reply_text(f"🎮 Jeu lancé ! +10 points 🏆 Score total : {new_score}")
-
-# Commande /score
-async def get_score(update: Update, context: CallbackContext):
-    user_id = str(update.message.from_user.id)
-    score = GROUP_DATA.get(user_id, {}).get("score", 0)
-    await update.message.reply_text(f"🏆 Votre score actuel : {score}")
 
 # Initialisation de Flask
 app = Flask(__name__)
@@ -170,11 +222,10 @@ def main():
     application.add_handler(CommandHandler("unban", unban_user))
     application.add_handler(CommandHandler("warn", warn_user))
     application.add_handler(CommandHandler("leaderboard", leaderboard))
-    # application.add_handler(CommandHandler("game", start_game))
-    application.add_handler(CommandHandler("score", get_score))
+    application.add_handler(CommandHandler("listban", list_banned_users))
 
     # Définir le webhook
-    webhook_url = f"https://ton-domaine-sur-render.com/{TELEGRAM_BOT_TOKEN}"
+    webhook_url = f"https://telegram-bot-control-bot.onrender.com/{TELEGRAM_BOT_TOKEN}"
     application.bot.set_webhook(url=webhook_url)
 
     # Démarrer Flask
