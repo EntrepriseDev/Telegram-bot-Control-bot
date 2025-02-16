@@ -3,8 +3,8 @@ import logging
 import json
 import asyncio
 from flask import Flask, request
-from telegram import Update
-from telegram.ext import Application, CommandHandler, CallbackContext, TelegramError
+from telegram import Update, TelegramError  # Modification ici
+from telegram.ext import Application, CommandHandler, CallbackContext
 
 # Configuration du logger
 logging.basicConfig(level=logging.INFO)
